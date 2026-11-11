@@ -1,0 +1,338 @@
+
+PRACTICA 1 – Cifrado con GPG2
+1. Instalar GPG2
+sudo dnf install gnupg2 -y
+
+Verificar:
+
+gpg2 --version
+2. Crear directorio y archivo
+mkdir practica_cifrado
+cd practica_cifrado
+nano archivo.txt
+
+Escribir dentro:
+
+Este es un archivo secreto para la practica de cifrado
+
+Guardar con:
+
+CTRL + X
+Y
+ENTER
+3. Cifrar archivo
+gpg2 -c archivo.txt
+
+Te pedirá contraseña de cifrado.
+
+Se creará:
+
+archivo.txt.gpg
+4. Intentar leer archivo cifrado
+cat archivo.txt.gpg
+
+Verás símbolos raros porque está cifrado.
+
+5. Descifrar archivo
+gpg2 archivo.txt.gpg
+
+Ingresas la contraseña.
+
+6. Mostrar contenido
+cat archivo.txt
+
+PRACTICA 2 – IPTables + Firewall
+
+En Rocky Linux 9 el firewall principal es firewalld, pero también puedes usar iptables.
+
+1 Instalar servicios
+HTTP
+sudo dnf install httpd -y
+sudo systemctl start httpd
+sudo systemctl enable httpd
+FTP
+sudo dnf install vsftpd -y
+sudo systemctl start vsftpd
+sudo systemctl enable vsftpd
+SSH (ya viene instalado)
+
+Verificar:
+
+systemctl status sshd
+Ver puertos abiertos
+ss -tuln
+
+Debes ver:
+
+80
+21
+22
+Bloquear puertos con IPTables
+
+Bloquear HTTP
+
+sudo iptables -A INPUT -p tcp --dport 80 -j DROP
+
+Bloquear FTP
+
+sudo iptables -A INPUT -p tcp --dport 21 -j DROP
+
+Bloquear SSH
+
+sudo iptables -A INPUT -p tcp --dport 22 -j DROP
+
+Ver reglas
+
+sudo iptables -L
+Habilitar nuevamente con IPTables
+
+Eliminar reglas
+
+sudo iptables -D INPUT -p tcp --dport 80 -j DROP
+sudo iptables -D INPUT -p tcp --dport 21 -j DROP
+sudo iptables -D INPUT -p tcp --dport 22 -j DROP
+Bloquear con Firewall-cmd
+
+Bloquear servicios
+
+sudo firewall-cmd --permanent --remove-service=http
+sudo firewall-cmd --permanent --remove-service=ftp
+sudo firewall-cmd --permanent --remove-service=ssh
+
+Aplicar cambios
+
+sudo firewall-cmd --reload
+Habilitar nuevamente
+sudo firewall-cmd --permanent --add-service=http
+sudo firewall-cmd --permanent --add-service=ftp
+sudo firewall-cmd --permanent --add-service=ssh
+
+Reload
+
+sudo firewall-cmd --reload
+
+
+PRACTICA 3
+
+INSTALACIÓN Y CONFIGURACIÓN DE SNORT 3 - ROCKY LINUX (según guía original)
+COMANDOS EN ORDEN (FASES 1 A 8)
+
+IP detectada: 192.168.17.145/24 | Interfaz: ens33
+NOTA: La captura parece ser de Ubuntu; las fases 1 y 2 con dnf son para Rocky Linux y NO deben ejecutarse en Ubuntu.
+
+FASE 1. PREPARACIÓN DEL SISTEMA
+sudo dnf update -y
+sudo dnf install epel-release -y
+sudo dnf config-manager --set-enabled crb
+sudo dnf update -y
+
+sudo nano /etc/ld.so.conf.d/local.conf
+
+# Escribir dentro del archivo (sin #):
+/usr/local/lib
+/usr/local/lib64
+# Guardar: Ctrl+O, Enter, Ctrl+X
+
+FASE 2. INSTALACIÓN DE DEPENDENCIAS
+sudo dnf install flex bison gcc gcc-c++ make cmake autoconf libtool git nano unzip wget libpcap-devel pcre2-devel libdnet-devel hwloc-devel openssl-devel zlib-devel luajit-devel pkgconfig pkgconf libunwind-devel libnfnetlink-devel libnetfilter_queue-devel libmnl-devel xz-devel gperftools libuuid-devel vectorscan vectorscan-devel -y
+
+FASE 3. INSTALACIÓN DE LIBDAQ
+git clone https://github.com/snort3/libdaq.git
+cd libdaq/
+./bootstrap
+./configure && make && sudo make install
+sudo ldconfig
+cd ../
+
+FASE 4. COMPILACIÓN DE SNORT 3
+git clone https://github.com/snort3/snort3.git
+cd snort3
+export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH
+export PKG_CONFIG_PATH=/usr/local/lib64/pkgconfig:$PKG_CONFIG_PATH
+export CFLAGS="-O3"
+export CXXFLAGS="-O3 -fno-rtti"
+./configure_cmake.sh --prefix=/usr/local/snort --enable-tcmalloc
+
+#compilacion
+cd build/
+make -j$(nproc)
+sudo make -j$(nproc) install
+cd ../../
+sudo ldconfig
+
+#Comprobamos version
+/usr/local/snort/bin/snort -V
+sudo ln -s /usr/local/snort/bin/snort /usr/bin/snort
+snort -V
+
+FASE 5. CONFIGURACIÓN DE RED
+sudo nano /usr/local/snort/etc/snort/snort.lua
+
+# Buscar HOME_NET y establecer (ajustar a la red real):
+HOME_NET = '192.168.17.0/24'
+
+# Volver a la terminal y ejecutar:
+snort -T -c /usr/local/snort/etc/snort/snort.lua
+sudo ip link set dev ens33 promisc on
+
+FASE 6. REGLAS DE DETECCIÓN
+sudo nano /usr/local/snort/etc/snort/local.rules
+
+# Escribir estas cuatro líneas dentro del archivo:
+alert icmp any any -> any any ( msg:"ICMP Traffic Detected"; sid:10000001; metadata:policy security-ips alert; )
+alert tcp any any -> any 21 ( msg:"FTP Traffic Detected en puerto 21"; sid:10000002; )
+alert tcp any any -> any 22 ( msg:"SSH Traffic Detected en puerto 22"; sid:10000003; )
+alert tcp any any -> any 80 ( msg:"HTTP Traffic Detected en puerto 80"; sid:10000004; )
+# Guardar: Ctrl+O, Enter, Ctrl+X
+
+FASE 7. EJECUCIÓN DE SNORT
+sudo snort -c /usr/local/snort/etc/snort/snort.lua -R /usr/local/snort/etc/snort/local.rules -i ens33 -A alert_fast -s 65535 -k none
+# Dejar esta terminal abierta.
+
+FASE 8. PRUEBAS DESDE WINDOWS (CMD O POWERSHELL)
+ping 192.168.10.145
+# Abrir en el navegador: http://192.168.10.145
+ftp 192.168.10.145
+ssh velissa@192.168.10.145
+
+NOTAS
+- Cambiar la IP, la red HOME_NET, la interfaz ens33 y el usuario SSH según tu equipo.
+- Los textos que se escriben dentro de nano NO se ejecutan como comandos en la terminal.
+- Si falla la instalación de dependencias, resolver el error antes de continuar.
+
+Práctica 4 
+
+1️⃣ Instalar Google Authenticator
+sudo dnf install epel-release -y
+sudo dnf install google-authenticator qrencode -y
+
+2️⃣ Sincronizar el tiempo (MUY IMPORTANTE para TOTP)
+sudo timedatectl set-timezone America/Santo_Domingo
+sudo timedatectl set-ntp true
+sudo systemctl restart chronyd
+timedatectl
+
+Debe mostrar:
+System clock synchronized: yes
+NTP service: active
+
+3️⃣ Configurar Google Authenticator para el usuario
+
+Cambiar al usuario que usará SSH:
+
+su - nolberto
+
+Ejecutar:
+
+google-authenticator
+
+Respuestas:
+
+Do you want authentication tokens to be time-based? → y
+Do you want me to update your file? → y
+Do you want to disallow multiple uses? → y
+Increase the original generation time limit? → n
+Enable rate-limiting? → y
+
+📱 Escanear el QR con Google Authenticator.
+
+Salir del usuario:
+
+exit
+4️⃣ Corregir permisos (esto evita el error que tuviste)
+sudo chown nolberto:nolberto /home/nolberto/.google_authenticator
+sudo chmod 600 /home/nolberto/.google_authenticator
+sudo chmod 700 /home/nolberto
+
+
+5️⃣ Arreglar contexto SELinux (MUY importante en Oracle Linux)
+sudo restorecon -Rv /home/nolberto
+
+Verificar:
+
+ls -lZ /home/nolberto/.google_authenticator
+
+Debe decir algo como:
+
+user_home_t
+6️⃣ Configurar PAM para usar Google Authenticator
+
+Editar:
+
+sudo nano /etc/pam.d/sshd
+
+Dejar las primeras líneas exactamente así:
+
+#%PAM-1.0
+auth       substack     password-auth
+auth       required     pam_google_authenticator.so nullok
+auth       include      postlogin
+
+Guardar.
+
+7️⃣ Configurar SSH para permitir 2FA
+
+Editar:
+
+sudo nano /etc/ssh/sshd_config
+
+Asegurar estas líneas:
+
+UsePAM yes
+PasswordAuthentication yes
+KbdInteractiveAuthentication yes
+ChallengeResponseAuthentication yes
+PubkeyAuthentication no
+
+Guardar.
+
+8️⃣ Reiniciar SSH
+sudo systemctl restart sshd
+
+Verificar:
+
+sudo systemctl status sshd
+
+Debe decir:
+
+active (running)
+9️⃣ Probar acceso desde la máquina host
+
+Desde tu PC:
+
+ssh nolberto@192.168.0.199
+
+Debe pedir:
+
+Verification code:
+Password:
+
+Ingresar:
+
+1️⃣ código de Google Authenticator
+2️⃣ contraseña del usuario
+
+(si da error :
+sudo setenforce 0
+getenforce
+y volver a prober)
+
+Si todo está correcto entrarás:
+
+[nolberto@m20252263 ~]$
+
+
+-----------------------------------------------------------------------------------------------------------------------------
+# Bloquear ICMP (Ping)
+sudo firewall-cmd --permanent --add-rich-rule='rule protocol value="icmp" drop'
+
+# Bloquear Puerto 22 (SSH)
+sudo firewall-cmd --permanent --remove-service=ssh
+sudo firewall-cmd --permanent --add-port=22/tcp --reject
+
+# Bloquear Puerto 80 (HTTP)
+sudo firewall-cmd --permanent --add-port=80/tcp --reject
+
+# Recargar para aplicar
+sudo firewall-cmd --reload
+sudo /usr/local/bin/snort -c /etc/snort/snort.lua -i eth0 -A alert_fast
